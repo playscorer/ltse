@@ -1,8 +1,6 @@
 package ltse.coding_exercise.extractor;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,7 +38,7 @@ public class Parser {
     private Map<String, Set<String>> tradeIdsByBroker;
     
     public Parser() {
-	formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy HH:mm:ss");
+	formatter = DateTimeFormatter.ofPattern("MM/d/yyyy HH:mm:ss");
 	brokers = new HashSet<>();
 	symbols = new HashSet<>();
 	initTimestampMinuteByBroker = new HashMap<>();
@@ -49,18 +47,13 @@ public class Parser {
 	tradeIdsByBroker = new HashMap<>();
     }
     
-    public void extract(String brokersFile, String symbolsFile, String tradesFile) {
-	try {
-	    brokers = readTxtFile(brokersFile);
-	    symbols = readTxtFile(symbolsFile);
-	    
-	    List<Order> rawOrders = readCsvFile(tradesFile);
-	    if (rawOrders != null && !rawOrders.isEmpty()) {
-		rawOrders.stream().filter(filterOrder).forEach(action);
-	    }
-	    
-	} catch (IOException e) {
-	    e.printStackTrace();
+    public void extract(String brokersFile, String symbolsFile, String tradesFile) throws IOException {
+	brokers = readTxtFile(brokersFile);
+	symbols = readTxtFile(symbolsFile);
+
+	List<Order> rawOrders = readCsvFile(tradesFile);
+	if (rawOrders != null && !rawOrders.isEmpty()) {
+	    rawOrders.stream().filter(filterOrder).forEach(action);
 	}
     }
     
@@ -75,6 +68,13 @@ public class Parser {
 	try (Stream<String> stream = Files.lines(path)) {
 	    return stream.skip(1).map(line -> {
 		String[] row = line.split(",");
+
+		if (row.length != 8) {
+		    System.out.println("Malformed order");
+		    return new Order();
+		} else {
+		    System.out.printf("%s %s %s %s %s %s %s %s\n", row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7]);
+		}
 
 		LocalDateTime timestamp = null;
 		try {
@@ -124,98 +124,127 @@ public class Parser {
     public Predicate<Order> filterOrder = order -> order.isValid() && order.isSymbolAccepted(symbols) && order.isBrokerAccepted(brokers);
     
     public Consumer<Order> action = order -> {
-	if (tradeIdsByBroker.get(order.getBroker()) != null && tradeIdsByBroker.get(order.getBroker()).contains(order.getSequenceId())) {
-	    rejectedOrders.computeIfAbsent(order.getBroker(), empty -> new ArrayList<>()).add(order);
-	    
+	LocalDateTime initTimestamp = initTimestampMinuteByBroker.get(order.getBroker());
+
+	// first insertion for a specific broker
+	if (initTimestamp == null) {
+	    initTimestampMinuteByBroker.put(order.getBroker(), order.getTimestamp());
+	    acceptedOrders.computeIfAbsent(order.getBroker(), m -> new TreeMap<>()).computeIfAbsent(order.getTimestamp(), m -> new ArrayList<>()).add(order);
+	    tradeIdsByBroker.computeIfAbsent(order.getBroker(), h -> new HashSet<>()).add(order.getSequenceId());
+
 	} else {
-	    LocalDateTime initTimestamp = initTimestampMinuteByBroker.get(order.getBroker());
-	    
-	    if (initTimestamp == null) {
-		initTimestampMinuteByBroker.put(order.getBroker(), initTimestamp);
-		acceptedOrders.put(order.getBroker(), new TreeMap<>()).put(order.getTimestamp(), new ArrayList<>()).add(order);
-		tradeIdsByBroker.put(order.getBroker(), new HashSet<>()).add(order.getSequenceId());
-		
-	    } else {
-		if (Duration.between(initTimestamp, order.getTimestamp()).getSeconds() <= 60) {
-		    
-		    if (acceptedOrders.get(order.getBroker()).get(initTimestamp).size() < 3) {
-			acceptedOrders.get(order.getBroker()).get(initTimestamp).add(order);
-			tradeIdsByBroker.put(order.getBroker(), new HashSet<>()).add(order.getSequenceId());
-			
-		    } else {
+	    // order submitted within a minute
+	    if (Duration.between(initTimestamp, order.getTimestamp()).getSeconds() <= 60) {
+		// three orders per minute autorized
+		if (acceptedOrders.get(order.getBroker()).get(initTimestamp).size() < 3) {
+		    // sequenceId must be unique within a single trade
+		    if (tradeIdsByBroker.get(order.getBroker()).contains(order.getSequenceId())) {
 			rejectedOrders.computeIfAbsent(order.getBroker(), empty -> new ArrayList<>()).add(order);
+		    } else {
+			acceptedOrders.get(order.getBroker()).get(initTimestamp).add(order);
+			tradeIdsByBroker.get(order.getBroker()).add(order.getSequenceId());			
 		    }
-		} else {
-		    initTimestampMinuteByBroker.put(order.getBroker(), initTimestamp);
-		    acceptedOrders.put(order.getBroker(), new TreeMap<>()).put(order.getTimestamp(), new ArrayList<>()).add(order);
-		    tradeIdsByBroker.put(order.getBroker(), new HashSet<>()).add(order.getSequenceId());
+
+		} else { // trade is full
+		    rejectedOrders.computeIfAbsent(order.getBroker(), empty -> new ArrayList<>()).add(order);
+		    tradeIdsByBroker.get(order.getBroker()).clear();
 		}
+	    } else { // new trade
+		tradeIdsByBroker.get(order.getBroker()).clear();
+		initTimestampMinuteByBroker.put(order.getBroker(), order.getTimestamp());
+		acceptedOrders.get(order.getBroker()).computeIfAbsent(order.getTimestamp(), empty -> new ArrayList<>()).add(order);
+		tradeIdsByBroker.get(order.getBroker()).add(order.getSequenceId());
 	    }
 	}
     };
     
-    public void writeAcceptedIds() {
-	Path path = Paths.get("out/acceptedIds.csv");
+    public void writeAcceptedIds(String output) {
+	Path path = Paths.get(output);
+	StringBuilder builder = new StringBuilder();
 	
 	acceptedOrders.entrySet().forEach(entry -> {
-	    entry.getValue().values().stream().flatMap(l -> l.stream())
-	    	.forEach(order -> {
-	    	    String line = new StringBuilder(entry.getKey()).append(",").append(order.getSequenceId()).toString();
-	    	    try {
-			Files.write(path, line.getBytes());
-		    } catch (Exception e) {
-			e.printStackTrace();
-		    }
-	    	});
+	    entry.getValue().values().stream().flatMap(l -> l.stream()).forEach(order -> {
+		builder.append(entry.getKey()).append(",").append(order.getSequenceId()).append(System.lineSeparator());
+	    });
 	});
+	
+	try {
+	    Files.write(path, builder.toString().getBytes());
+	} catch (IOException e) {
+	    e.printStackTrace();
+	}
     }
     
-    public void writeRejectedIds() {
-	Path path = Paths.get("out/rejectedIds.csv");
+    public void writeRejectedIds(String output) {
+	Path path = Paths.get(output);
+	StringBuilder builder = new StringBuilder();
 	
 	rejectedOrders.entrySet().forEach(entry -> {
 	    entry.getValue().stream().forEach(order -> {
-		String line = new StringBuilder(entry.getKey()).append(",").append(order.getSequenceId()).toString();
-		try {
-		    Files.write(path, line.getBytes());
-		} catch (Exception e) {
-		    e.printStackTrace();
-		}
+		builder.append(entry.getKey()).append(",").append(order.getSequenceId()).append(System.lineSeparator());
 	    });
 	});
+	
+	try {
+	    Files.write(path, builder.toString().getBytes());
+	} catch (IOException e) {
+	    e.printStackTrace();
+	}
     }
     
-    public void writeAcceptedOrders() throws IOException {
-	FileOutputStream fileOutputStream = new FileOutputStream("out/acceptedOrders.txt");
-	ObjectOutputStream objectOutputStream = new ObjectOutputStream(fileOutputStream);
+    public void writeAcceptedOrders(String output) {
+	Path path = Paths.get(output);
 	
-	acceptedOrders.values().stream().flatMap(m -> m.values().stream()).forEach(order -> {
-	    try {
-		objectOutputStream.writeObject(order);
-	    } catch (IOException e) {
-		e.printStackTrace();
-	    }
-	});
-	
-	objectOutputStream.flush();
-	objectOutputStream.close();
+	try {
+	    Files.write(path, acceptedOrders.values().stream().flatMap(m -> m.values().stream()).flatMap(l -> l.stream()).map(o -> o.toString())
+		    .collect(Collectors.joining(System.lineSeparator())).getBytes());
+	} catch (IOException e) {
+	    e.printStackTrace();
+	}	
     }
     
-    public void writeRejectedOrders() throws IOException {
-	FileOutputStream fileOutputStream = new FileOutputStream("out/rejectedOrders.txt");
-	ObjectOutputStream objectOutputStream = new ObjectOutputStream(fileOutputStream);
+    public void writeRejectedOrders(String output) {
+	Path path = Paths.get(output);
 	
-	rejectedOrders.values().forEach(order -> {
-	    try {
-		objectOutputStream.writeObject(order);
-	    } catch (IOException e) {
-		e.printStackTrace();
-	    }
-	});
-	
-	objectOutputStream.flush();
-	objectOutputStream.close();
+	try {
+	    Files.write(path, rejectedOrders.values().stream().flatMap(l -> l.stream()).map(o -> o.toString())
+		    .collect(Collectors.joining(System.lineSeparator())).getBytes());
+	} catch (IOException e) {
+	    e.printStackTrace();
+	}
     }
     
+    public void logAcceptedOrders() throws IOException {
+	System.out.println("## Accepted orders ##");
+	acceptedOrders.values().stream().flatMap(m -> m.values().stream()).forEach(System.out::println);
+    }
+    
+    /**
+     * @return the acceptedOrders
+     */
+    public List<Order> getAcceptedOrders() {
+        return acceptedOrders.values().stream().flatMap(m -> m.values().stream()).flatMap(v -> v.stream()).collect(Collectors.toList());
+    }
+
+    /**
+     * @return the rejectedOrders
+     */
+    public List<Order> getRejectedOrders() {
+        return rejectedOrders.values().stream().flatMap(v -> v.stream()).collect(Collectors.toList());
+    }
+
+    /**
+     * @param brokers the brokers to set
+     */
+    public void setBrokers(Set<String> brokers) {
+        this.brokers = brokers;
+    }
+
+    /**
+     * @param symbols the symbols to set
+     */
+    public void setSymbols(Set<String> symbols) {
+        this.symbols = symbols;
+    }
     
 }

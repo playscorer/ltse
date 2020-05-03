@@ -1,16 +1,10 @@
 package ltse.coding_exercise.entities;
 
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Set;
 
-public class Order implements Serializable {
-
-    /**
-     * 
-     */
-    private static final long serialVersionUID = 1L;
+public class Order {
     
     private LocalDateTime timestamp;
     private String broker;
@@ -21,6 +15,9 @@ public class Order implements Serializable {
     private BigDecimal price;
     private Side side;
     
+    public Order() {
+    }
+
     public Order(LocalDateTime timestamp, String broker, String sequenceId, String type, String symbol, int quantity,
 	    BigDecimal price, Side side) {
 	this.timestamp = timestamp;
@@ -94,7 +91,7 @@ public class Order implements Serializable {
 		&& symbol != null && !symbol.isEmpty()
 		&& type != null && !type.isEmpty()
 		&& quantity != 0
-		&& sequenceId != null && sequenceId.isEmpty()
+		&& sequenceId != null && !sequenceId.isEmpty()
 		&& side != null && !Side.None.equals(side)
 		&& price != null && !BigDecimal.ZERO.equals(price);
     }
@@ -105,6 +102,76 @@ public class Order implements Serializable {
 
     public boolean isBrokerAccepted(Set<String> brokers) {
 	return brokers.contains(broker);
+    }
+
+    @Override
+    public int hashCode() {
+	final int prime = 31;
+	int result = 1;
+	result = prime * result + ((broker == null) ? 0 : broker.hashCode());
+	result = prime * result + ((price == null) ? 0 : price.hashCode());
+	result = prime * result + quantity;
+	result = prime * result + ((sequenceId == null) ? 0 : sequenceId.hashCode());
+	result = prime * result + ((side == null) ? 0 : side.hashCode());
+	result = prime * result + ((symbol == null) ? 0 : symbol.hashCode());
+	result = prime * result + ((timestamp == null) ? 0 : timestamp.hashCode());
+	result = prime * result + ((type == null) ? 0 : type.hashCode());
+	return result;
+    }
+
+    /* (non-Javadoc)
+     * @see java.lang.Object#equals(java.lang.Object)
+     */
+    @Override
+    public boolean equals(Object obj) {
+	if (this == obj)
+	    return true;
+	if (obj == null)
+	    return false;
+	if (getClass() != obj.getClass())
+	    return false;
+	Order other = (Order) obj;
+	if (broker == null) {
+	    if (other.broker != null)
+		return false;
+	} else if (!broker.equals(other.broker))
+	    return false;
+	if (price == null) {
+	    if (other.price != null)
+		return false;
+	} else if (!price.equals(other.price))
+	    return false;
+	if (quantity != other.quantity)
+	    return false;
+	if (sequenceId == null) {
+	    if (other.sequenceId != null)
+		return false;
+	} else if (!sequenceId.equals(other.sequenceId))
+	    return false;
+	if (side != other.side)
+	    return false;
+	if (symbol == null) {
+	    if (other.symbol != null)
+		return false;
+	} else if (!symbol.equals(other.symbol))
+	    return false;
+	if (timestamp == null) {
+	    if (other.timestamp != null)
+		return false;
+	} else if (!timestamp.equals(other.timestamp))
+	    return false;
+	if (type == null) {
+	    if (other.type != null)
+		return false;
+	} else if (!type.equals(other.type))
+	    return false;
+	return true;
+    }
+
+    @Override
+    public String toString() {
+	return "Order [timestamp=" + timestamp + ", broker=" + broker + ", sequenceId=" + sequenceId + ", type=" + type
+		+ ", symbol=" + symbol + ", quantity=" + quantity + ", price=" + price + ", side=" + side + "]";
     }
     
 }
