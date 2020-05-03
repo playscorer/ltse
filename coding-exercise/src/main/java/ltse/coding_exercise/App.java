@@ -16,7 +16,7 @@ public class App
     public static void main( String[] args )
     {
 	if (args.length != 3) {
-	    System.err.println("Usage : java ltse.coding_exercise.extractor.App");
+	    System.err.println("Usage : java ltse.coding_exercise.extractor.App <brokerFile> <symbolsFile> <tradesFile>");
 	    return;
 	}
         Parser parser = new Parser();
