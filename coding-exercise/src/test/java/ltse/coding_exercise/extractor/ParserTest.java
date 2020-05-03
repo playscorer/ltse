@@ -13,7 +13,7 @@ import java.util.Set;
 import org.junit.Before;
 import org.junit.Test;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 import ltse.coding_exercise.entities.Order;
 import ltse.coding_exercise.entities.Side;
 
