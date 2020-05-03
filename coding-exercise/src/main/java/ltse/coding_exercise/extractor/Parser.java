@@ -162,12 +162,10 @@ public class Parser {
 	Path path = Paths.get(output);
 	StringBuilder builder = new StringBuilder();
 	
-	acceptedOrders.entrySet().forEach(entry -> {
-	    entry.getValue().values().stream().flatMap(l -> l.stream())
-		    .sorted((o1, o2) -> o1.getTimestamp().compareTo(o2.getTimestamp())).forEach(order -> {
-		builder.append(entry.getKey()).append(",").append(order.getSequenceId()).append(System.lineSeparator());
-	    });
-	});
+	acceptedOrders.values().stream().flatMap(m -> m.values().stream()).flatMap(l -> l.stream())
+		.sorted((o1, o2) -> o1.getTimestamp().compareTo(o2.getTimestamp())).forEach(order -> {
+		    builder.append(order.getBroker()).append(",").append(order.getSequenceId()).append(System.lineSeparator());
+		});
 	
 	try {
 	    Files.write(path, builder.toString().getBytes());
